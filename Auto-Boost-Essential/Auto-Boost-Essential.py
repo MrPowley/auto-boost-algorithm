@@ -46,7 +46,7 @@ except:
 from rich.progress import Progress, TextColumn, BarColumn, TimeElapsedColumn, TimeRemainingColumn, SpinnerColumn
 from rich.console import Console
 from statistics import quantiles
-from math import ceil, log10
+from math import ceil, log10, sqrt
 from pathlib import Path
 import subprocess
 import argparse
@@ -1062,7 +1062,14 @@ def calculate_zones(ranges: list[float], hr: bool, nframe: int) -> None:
             
             # Calculate CRF adjustment using aggressive or normal multiplier
             multiplier = 40 if aggressive else 20
-            adjustment = ceil((1.0 - (metric_percentile_15_total[index] / metric_average)) * multiplier * 4) / 4
+
+            # adjustment = ceil((1.0 - (metric_percentile_15_total[index] / metric_average)) * multiplier * 4) / 4
+
+            if (x := (metric_percentile_15_total[index] / metric_average)) > 1:
+                adjustment = ceil(4 * (multiplier * (1.0 - x) / sqrt(x))) / 4
+            else:
+                adjustment = ceil(4 * multiplier * (1.0 - x) * x) / 4
+
             new_crf = crf - adjustment
 
             # Apply sane limits
