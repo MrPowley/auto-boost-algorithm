@@ -61,6 +61,25 @@ import re
 
 ver_str = "v2.0 (Pre-Release)"
 
+def parse_svt_params(input_params: str) -> dict[str, str]:
+    """Takes a string with svt parameters and outputs a dict {parameter: value} """
+    parameters: dict[str, str] = {}
+
+    if len(input_params) == 0:
+        return parameters
+
+    input_parameters: list[str] = input_params.split()
+
+    # Will look at current and next param
+    for i in range(len(input_parameters) - 1):
+        if (current_parameter := input_parameters[i]).startswith("--"):
+            if (next_parameter := input_parameters[i+1]).startswith("--"):
+                parameters[current_parameter] = "" # check for parameters without value
+            else:
+                parameters[current_parameter] = next_parameter
+
+    return parameters
+
 parser = argparse.ArgumentParser()
 parser.add_argument("-s", "--stage", help = "Select stage: 1 = fast encode, 2 = calculate metrics, 3 = generate zones, 4 = final encode | Default: all", default=0)
 parser.add_argument("-i", "--input", required=True, help = "Video input filepath (original source file)")
@@ -116,7 +135,9 @@ quality = args.quality
 aggressive = args.aggressive
 unshackle = args.unshackle
 fast_params = args.fast_params if args.fast_params is not None else ""
+parsed_fast_params = parse_svt_params(fast_params)
 final_params = args.final_params if args.final_params is not None else ""
+parsed_final_params = parse_svt_params(final_params)
 #grain_format = args.grain_format # upcoming auto-FGS feature
 ssimu2 = args.ssimu2 if args.ssimu2 is not None else ""
 verbose = args.verbose
@@ -199,35 +220,23 @@ if not os.path.exists(src_file):
     print("The source input doesn't exist. Double-check the provided path.")
     raise SystemExit(1)
 
-if "--preset" in fast_params.split():
-    index = fast_params.split().index("--preset")
-    fast_speed = int(fast_params.split()[index+1])
-else:
-    if fast_speed not in ["medium", "fast", "faster"]:
-        print("The fast pass speed must be either medium, fast or faster.")
-        raise SystemExit(1)
+fast_preset = parsed_fast_params.get("--preset")
+if fast_preset:
+    fast_speed = int(fast_preset)
+elif fast_speed not in ["medium", "fast", "faster"]:
+    print("The fast pass speed must be either medium, fast or faster.")
+    raise SystemExit(1)
 
-if "--preset" in final_params.split():
-    index = final_params.split().index("--preset")
-    final_speed = int(final_params.split()[index+1])
-else:
-    if final_speed not in ["slower", "slow", "medium", "fast", "faster"]:
-        print("The final pass speed must be either slower, slow, medium, fast or faster.")
-        raise SystemExit(1)
+final_preset = parsed_final_params.get("--preset")
+if final_preset:
+    final_speed = int(final_preset)
+elif final_speed not in ["slower", "slow", "medium", "fast", "faster"]:
+    print("The final pass speed must be either slower, slow, medium, fast or faster.")
+    raise SystemExit(1)
 
-if "--crf" in fast_params:
-    index = fast_params.index("--crf")
-    try:
-        quality = float(fast_params[index+6:index+11])
-    except:
-        try:
-            quality = float(fast_params[index+6:index+10])
-        except:
-            try:
-                quality = float(fast_params[index+6:index+8])
-            except:
-                print("CRF must have 0, 1 or 2 decimals.")
-                raise SystemExit(1)
+crf = parsed_fast_params.get("--crf")
+if crf:
+    quality = ceil(float(crf) * 4) / 4
 else:
     if quality not in ["low", "medium", "high"]:
         print("The quality preset must be either low, medium or high.")
