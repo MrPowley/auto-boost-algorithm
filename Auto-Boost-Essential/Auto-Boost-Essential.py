@@ -57,7 +57,7 @@ import glob
 import sys
 import gc
 import os
-import re
+import csv
 
 ver_str = "v2.0 (Pre-Release)"
 
@@ -105,8 +105,8 @@ cache_file = tmp_dir / f"{src_file.stem}.ffindex"
 fast_output_file = tmp_dir / f"{src_file.stem}_fastpass.ivf"
 tmp_final_output_file = tmp_dir / f"{src_file.stem}.ivf"
 final_output_file = output_dir / f"{src_file.stem}.ivf"
-ssimu2_log_file = tmp_dir / f"{src_file.stem}_ssimu2.log"
-xpsnr_log_file = tmp_dir / f"{src_file.stem}_xpsnr.log"
+ssimu2_log_file = tmp_dir / f"{src_file.stem}_ssimu2.csv"
+xpsnr_log_file = tmp_dir / f"{src_file.stem}_xpsnr.csv"
 zones_file = tmp_dir / f"{src_file.stem}_zones.cfg"
 stage_file = tmp_dir / f"{src_file.stem}_stage.txt"
 stage_resume = 0
@@ -937,16 +937,18 @@ def calculate_metric() -> None:
 
     skip_offset = 0
     if ssimu2 == "":
-        with open(xpsnr_log_file, "w") as file:
+        with open(xpsnr_log_file, "w", newline="", encoding="utf-8") as file:
+            writer = csv.writer(file)
             for index in range(len(score_list[0])):
                 for i in range(skip):
-                    file.write(f"{index+skip_offset+i}: {score_list[0][index]} {score_list[1][index]} {score_list[2][index]}\n")
+                    writer.writerow([index+skip_offset+i, score_list[0][index], score_list[1][index], score_list[2][index]])
                 skip_offset += skip - 1
     else:
-        with open(ssimu2_log_file, "w") as file:
+        with open(ssimu2_log_file, "w", newline="", encoding="utf-8") as file:
+            writer = csv.writer(file)
             for index, score in enumerate(score_list):
                 for i in range(skip):
-                    file.write(f"{index+skip_offset+i}: {score}\n")
+                    writer.writerow([index+skip_offset+i, score])
                 skip_offset += skip - 1
 
 def metrics_aggregation(score_list: list[float]) -> tuple[float, float]:
@@ -991,34 +993,27 @@ def calculate_zones(ranges: list[float], hr: bool, nframe: int) -> None:
 
     if ssimu2 == "":
         with open(xpsnr_log_file, "r") as file:
-            for line in file:
-                match = re.search(r"([0-9]+): ([0-9]+\.[0-9]+) ([0-9]+\.[0-9]+) ([0-9]+\.[0-9]+)", line)
-                if match:
-                    score_y = float(match.group(2))
-                    score_u = float(match.group(3))
-                    score_v = float(match.group(4))
+            reader = csv.reader(file)
 
-                    maxval: int = 255
-                    xpsnr_mse_y: float = (maxval**2) / (10 ** (score_y / 10)) # PSNR to MSE
-                    xpsnr_mse_u: float = (maxval**2) / (10 ** (score_u / 10)) # PSNR to MSE
-                    xpsnr_mse_v: float = (maxval**2) / (10 ** (score_v / 10)) # PSNR to MSE
-                    w_xpsnr_mse: float = ((4.0 * xpsnr_mse_y) + xpsnr_mse_u + xpsnr_mse_v) / 6.0
-                    score_weighted = 10.0 * log10((maxval**2) / w_xpsnr_mse)
+            maxval: int = 255
+            maxval_squared: int = maxval ** 2
 
-                    metric_scores.append(score_weighted)
-                else:
-                    console.print("[red]Unexpected error with metric log file.\nTry re-running stage 2. Exiting.")
-                    raise SystemExit(1)
+            for row in reader:
+                _, score_y, score_u, score_v = row
+
+                xpsnr_mse_y: float = maxval_squared / (10 ** (float(score_y) / 10)) # PSNR to MSE
+                xpsnr_mse_u: float = maxval_squared / (10 ** (float(score_u) / 10)) # PSNR to MSE
+                xpsnr_mse_v: float = maxval_squared / (10 ** (float(score_v) / 10)) # PSNR to MSE
+                w_xpsnr_mse: float = ((4.0 * xpsnr_mse_y) + xpsnr_mse_u + xpsnr_mse_v) / 6.0
+                score_weighted = 10.0 * log10(maxval_squared / w_xpsnr_mse)
+
+                metric_scores.append(score_weighted)
     else:
         with open(ssimu2_log_file, "r") as file:
-            for line in file:
-                match = re.search(r"([0-9]+): (-?[0-9]+\.[0-9]+)", line)
-                if match:
-                    score = float(match.group(2))
-                    metric_scores.append(score)
-                else:
-                    console.print("[red]Unexpected error with metric log file.\nTry re-running stage 2. Exiting.")
-                    raise SystemExit(1)
+            reader = csv.reader(file)
+            for row in reader:
+                _, score = row
+                metric_scores.append(float(score))
 
     metric_total_scores = []
     metric_percentile_15_total = []
