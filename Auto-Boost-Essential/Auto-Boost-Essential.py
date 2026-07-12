@@ -837,6 +837,20 @@ def final_pass() -> None:
     if resume and resume_file.exists():
         merge_ivf_parts(resume_file, tmp_final_output_file, fwidth, fheight, ffpsnum, ffpsden)
 
+def try_metric(source, encoded, metric):
+    """Trys to run the chosen metric on the source and encodec vs video. metric is either 'xpsnr_cpu', 'ssimu_cpu' or 'ssimu2_gpu"""
+    try:
+        match metric:
+            case "xpsnr_cpu" : return core.vszip.XPSNR(source, encoded, temporal=False, verbose=False)
+            case "ssimu2_cpu": return core.vszip.SSIMULACRA2(source, encoded)
+            case "ssimu2_gpu": return core.vship.SSIMULACRA2(source, encoded, numStream=2)
+    except AttributeError:
+        if metric in ["ssimu2_cpu", "xpsnr_cpu"]:
+            console.print(f"[red]vs-zip not found. Check your installation.")
+        else:
+            console.print(f"[red]Vship not found. Check your installation.")
+        return
+
 def calculate_metric() -> None:
     """
     Calculate SSIMULACRA2 or XPSNR metrics score.
@@ -869,35 +883,20 @@ def calculate_metric() -> None:
 
     global ssimu2
     if ssimu2 == "":
-        try:
-            result = core.vszip.XPSNR(cut_source_clip, cut_encoded_clip, temporal=False, verbose=False)
-        except:
-            console.print(f"[red]vs-zip not found. Check your installation.")
-            raise SystemExit(1)
+        result = try_metric(cut_source_clip, cut_encoded_clip, "xpsnr_cpu")
+        if result is None: SystemExit(1)
     elif ssimu2 == "gpu":
-        try:
-            result = core.vship.SSIMULACRA2(cut_source_clip, cut_encoded_clip, numStream = 2)
-        except:
-            console.print(f"[red]Vship not found. Check your installation.")
-            raise SystemExit(1)
+        result = try_metric(cut_source_clip, cut_encoded_clip, "ssimu2_gpu")
+        if result is None: SystemExit(1)
     elif ssimu2 == "cpu":
-        try:
-            result = core.vszip.SSIMULACRA2(cut_source_clip, cut_encoded_clip)
-        except:
-            console.print(f"[red]vs-zip not found. Check your installation.")
-            raise SystemExit(1)
+        result = try_metric(cut_source_clip, cut_encoded_clip, "ssimu2_cpu")
     else:
-        try:
-            result = core.vship.SSIMULACRA2(cut_source_clip, cut_encoded_clip, numStream = 2)
-            ssimu2 = "gpu"
-        except:
-            console.print(f"[yellow]Vship not found or available, defaulting to vs-zip.")
-            try:
-                result = core.vszip.SSIMULACRA2(cut_source_clip, cut_encoded_clip)
-                ssimu2 = "cpu"
-            except:
-                console.print(f"[red]vs-zip not found either. Check your installation.")
-                raise SystemExit(1)
+        ssimu2 = "gpu"
+        result = try_metric(cut_source_clip, cut_encoded_clip, "ssimu_gpu")
+        if result is None:
+            ssimu2 = "cpu"
+            result = try_metric(cut_source_clip, cut_encoded_clip, "ssimu2_cpu")
+            if result is None: SystemExit(1)
 
     if ssimu2 == "":
         score_list = [[None] * cut_source_clip.num_frames for _ in range(3)]
